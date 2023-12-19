@@ -5,7 +5,7 @@ import requests
 import matplotlib.pyplot as plt
 
 def convert_df(df):
-   return df.to_csv(index=False).encode('utf-8')
+    return df.to_csv(index=False).encode('utf-8')
 
 def calculate_allocation(capital, percentage):
     return capital * (percentage / 100)
@@ -14,7 +14,8 @@ def calculate_risk_capital(capital, multiplier):
     return capital * multiplier
 
 # prevent function from making unnecessary API calls
-@st.cache
+# https://docs.streamlit.io/library/advanced-features/caching
+@st.cache_data
 def get_crypto_names(api_key):
     url = 'https://web-api.coinmarketcap.com/v1/cryptocurrency/listings/latest'
     headers = {
@@ -100,6 +101,8 @@ def pie_chart(df):
     return fig
 
 def main():
+    # CMC API Key
+    api_key = '32c03197-f921-4a61-a539-d7daea4ee1f4'
     create_table()
 
     st.title("Crypto Portfolio Allocator")
@@ -155,8 +158,6 @@ def main():
     # Load data from the database
     df = load_from_db()
 
-    api_key = '32c03197-f921-4a61-a539-d7daea4ee1f4'
-
     # Fetch cryptocurrency names from CoinMarketCap
     crypto_names = get_crypto_names(api_key)
 
@@ -182,7 +183,7 @@ def main():
                 else:
                     new_row = (coin_name, allocation_percentage, "0")
                     df = pd.concat([df, pd.DataFrame([new_row], columns=["coin_name", "allocation_percentage",
-                                                                             "allocated_capital"])], ignore_index=True)
+                                                                         "allocated_capital"])], ignore_index=True)
                     save_to_db(df)  # Save the entire updated dataframe to the database
                     st.session_state.allocation_percentage = allocation_percentage  # Update session state for allocation_percentage
 
@@ -191,12 +192,8 @@ def main():
         # Update allocated_capital dynamically based on the latest capital input and allocation_percentage
         df["allocated_capital"] = df.apply(lambda row: calculate_allocation(selected_allocation_value, row["allocation_percentage"]), axis=1)
 
-        # Show the total percentage and total allocated capital in the last row
-        total_allocation_percentage = df["allocation_percentage"].sum()
-        total_allocated_capital = df["allocated_capital"].sum()
-        pd.DataFrame([{"coin_name": "Total", "allocation_percentage": total_allocation_percentage,
-                                   "allocated_capital": total_allocated_capital}])
-
+        df = pd.concat([df, df.agg(["sum"])])
+        df.loc[df.index[-1], 'coin_name'] = ''
         st.dataframe(df)
 
         csv = convert_df(df)
@@ -209,17 +206,18 @@ def main():
         )
 
         # Add a dropdown for deleting a coin
-        selected_coin = st.selectbox("Select Coin to Delete:", df["coin_name"])
+        coin_names_to_delete = df[df["coin_name"] != ""]["coin_name"].tolist()
+        selected_coin = st.selectbox("Select Coin to Delete:", coin_names_to_delete, key='coin_selectbox')
         delete_button = st.button("Delete Selected Coin")
 
         if delete_button:
             with st.spinner("Deleting..."):
-                df = df[df["coin_name"] != selected_coin]
+                df = df[(df["coin_name"] != selected_coin) & (df["coin_name"] != '')]
                 save_to_db(df)  # Save the entire updated dataframe to the database
 
         # Show the pie chart for Allocation Percentage
         st.header("Pie Chart: Allocation Percentage")
-        fig = pie_chart(df)
+        fig = pie_chart(df[df["coin_name"] != ""])
         st.pyplot(fig)
 
 if __name__ == "__main__":

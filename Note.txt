@@ -1,5 +1,7 @@
 cd C:\Users\bston\Desktop\CryptoDCA
 
+streamlit run main.py
+
 1. Create requirements.txt file
 pip install pipreqs
 pipreqs --encoding=utf8 C:\Users\bston\Desktop\CryptoDCA --force
