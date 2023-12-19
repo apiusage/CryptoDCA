@@ -4,12 +4,17 @@ import sqlite3
 import requests
 import matplotlib.pyplot as plt
 
+def convert_df(df):
+   return df.to_csv(index=False).encode('utf-8')
+
 def calculate_allocation(capital, percentage):
     return capital * (percentage / 100)
 
 def calculate_risk_capital(capital, multiplier):
     return capital * multiplier
 
+# prevent function from making unnecessary API calls
+@st.cache
 def get_crypto_names(api_key):
     url = 'https://web-api.coinmarketcap.com/v1/cryptocurrency/listings/latest'
     headers = {
@@ -38,8 +43,8 @@ def get_crypto_names(api_key):
 
     return crypto_names
 
-def coin_already_exists(data, coin_name):
-    return coin_name in data["coin_name"].values
+def coin_already_exists(df, coin_name):
+    return coin_name in df["coin_name"].values
 
 def create_table():
     connection = sqlite3.connect('crypto_data.db')
@@ -87,9 +92,9 @@ def load_from_db():
     connection.close()
     return data
 
-def pie_chart(data):
+def pie_chart(df):
     fig, ax = plt.subplots()
-    ax.pie(data["allocation_percentage"], labels=data["coin_name"], autopct='%1.1f%%', startangle=90)
+    ax.pie(df["allocation_percentage"], labels=df["coin_name"], autopct='%1.1f%%', startangle=90)
     ax.set_aspect('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
 
     return fig
@@ -103,15 +108,15 @@ def main():
     if 'capital' not in st.session_state:
         st.session_state.capital = 50
 
-    # Step 0: Allow the user to enter a capital value
+    # Allow the user to enter a capital value
     user_input_capital = st.text_input("Enter the amount of capital:", value=str(st.session_state.capital))
 
+    # Use the stored input value for calculations
     try:
         capital = float(user_input_capital)
-        st.session_state.capital = capital  # Update session state only when the user input is a valid float
     except ValueError:
         st.warning("Please enter a valid numeric value for capital.")
-        return
+        st.stop()  # Halt script execution if there's a validation error
 
     # Display table with allocation based on risk
     st.header("Allocation Based on Risk")
@@ -130,6 +135,10 @@ def main():
     risk_allocation_df = pd.DataFrame(list(risk_allocation_data.items()), columns=["Risk Range", "Allocation Value"])
     st.table(risk_allocation_df)
 
+    # Calculate and display the sum of the "Allocation Value" column for the first 5 rows
+    total_amount_needed = risk_allocation_df["Allocation Value"].head(5).sum()
+    st.write("Total sum required: $" + str(total_amount_needed))
+
     # Step 1: Retrieve the amount of capital from the user
     st.header("Crypto Coin Allocation")
 
@@ -144,7 +153,7 @@ def main():
     selected_allocation_value = risk_allocation_df[risk_allocation_df["Risk Range"] == selected_risk_range]["Allocation Value"].values[0]
 
     # Load data from the database
-    data = load_from_db()
+    df = load_from_db()
 
     api_key = '32c03197-f921-4a61-a539-d7daea4ee1f4'
 
@@ -164,45 +173,53 @@ def main():
 
         if st.button("Add Coin"):
             # Check if the total allocation percentage will exceed 100
-            if (data["allocation_percentage"].sum() + allocation_percentage) > 100:
+            if (df["allocation_percentage"].sum() + allocation_percentage) > 100:
                 st.warning("Total allocation percentage cannot exceed 100%. Please adjust your allocations.")
             else:
                 # Check if the selected coin already exists in the table
-                if coin_already_exists(data, coin_name):
+                if coin_already_exists(df, coin_name):
                     st.warning("This coin is already in the table. Please select a different coin.")
                 else:
                     new_row = (coin_name, allocation_percentage, "0")
-                    data = pd.concat([data, pd.DataFrame([new_row], columns=["coin_name", "allocation_percentage",
+                    df = pd.concat([df, pd.DataFrame([new_row], columns=["coin_name", "allocation_percentage",
                                                                              "allocated_capital"])], ignore_index=True)
-                    save_to_db(data)  # Save the entire updated dataframe to the database
+                    save_to_db(df)  # Save the entire updated dataframe to the database
                     st.session_state.allocation_percentage = allocation_percentage  # Update session state for allocation_percentage
 
     # Display the table
-    if not data.empty:
+    if not df.empty:
         # Update allocated_capital dynamically based on the latest capital input and allocation_percentage
-        data["allocated_capital"] = data.apply(lambda row: calculate_allocation(selected_allocation_value, row["allocation_percentage"]), axis=1)
+        df["allocated_capital"] = df.apply(lambda row: calculate_allocation(selected_allocation_value, row["allocation_percentage"]), axis=1)
 
         # Show the total percentage and total allocated capital in the last row
-        total_allocation_percentage = data["allocation_percentage"].sum()
-        total_allocated_capital = data["allocated_capital"].sum()
-        total_row = pd.DataFrame([{"coin_name": "Total", "allocation_percentage": total_allocation_percentage,
+        total_allocation_percentage = df["allocation_percentage"].sum()
+        total_allocated_capital = df["allocated_capital"].sum()
+        pd.DataFrame([{"coin_name": "Total", "allocation_percentage": total_allocation_percentage,
                                    "allocated_capital": total_allocated_capital}])
 
-        # Simple styling for the table
-        st.table(pd.concat([data, total_row], ignore_index=True).drop(columns=["id"], errors="ignore"))
+        st.dataframe(df)
+
+        csv = convert_df(df)
+        st.download_button(
+            "Press to Download",
+            csv,
+            "file.csv",
+            "text/csv",
+            key='download-csv'
+        )
 
         # Add a dropdown for deleting a coin
-        selected_coin = st.selectbox("Select Coin to Delete:", data["coin_name"])
+        selected_coin = st.selectbox("Select Coin to Delete:", df["coin_name"])
         delete_button = st.button("Delete Selected Coin")
 
         if delete_button:
             with st.spinner("Deleting..."):
-                data = data[data["coin_name"] != selected_coin]
-                save_to_db(data)  # Save the entire updated dataframe to the database
+                df = df[df["coin_name"] != selected_coin]
+                save_to_db(df)  # Save the entire updated dataframe to the database
 
         # Show the pie chart for Allocation Percentage
         st.header("Pie Chart: Allocation Percentage")
-        fig = pie_chart(data)
+        fig = pie_chart(df)
         st.pyplot(fig)
 
 if __name__ == "__main__":

@@ -2,15 +2,15 @@ cd C:\Users\bston\Desktop\CryptoDCA
 
 1. Create requirements.txt file
 pip install pipreqs
-pipreqs --encoding=utf8 C:\Users\bston\Desktop\Crypto_Analyzer --force
+pipreqs --encoding=utf8 C:\Users\bston\Desktop\CryptoDCA --force
 
 2. Push to Github
 git init
 git add .
 git status
 git commit -m "Updates"
-git remote add origin https://github.com/apiusage/Crypto_Analyzer.git
-git remote set-url origin https://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@github.com/apiusage/Crypto_Analyzer.git
+git remote add origin https://github.com/apiusage/CryptoDCA.git
+git remote set-url origin https://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@github.com/apiusage/CryptoDCA.git
 git push -u origin master
 git push -f origin master
 
